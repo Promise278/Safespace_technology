@@ -2,7 +2,7 @@ const bcrypt = require("bcrypt");
 const jwt = require("jsonwebtoken");
 const sequelize = require("../config/connection");
 const { v4: uuidv4 } = require("uuid");
-const{ Users } = require("../models");
+const { Users } = require("../models");
 const { Op } = require("sequelize");
 require("dotenv").config();
 
@@ -10,29 +10,20 @@ const JWT_SECRET = process.env.JWT_SECRET;
 
 async function register(req, res) {
   try {
-    const { username, email, password, roles } = req.body;
+    const { username, email, password, role } = req.body;
 
-    if (!username || !email || !password ||!Array.isArray(roles)) {
+    if (!username || !email || !password || !role || typeof role !== "string") {
       return res.status(400).json({
         success: false,
-        message: "All fields are required",
+        message: "Username, email, password, and role are required",
       });
     }
 
-    if (!Array.isArray(roles) || roles.length === 0) {
+    const ALLOWED_ROLES = ["sharer", "supporter"];
+    if (!ALLOWED_ROLES.includes(role)) {
       return res.status(400).json({
         success: false,
-        message: "Roles must be an array with at least one role (e.g., ['sharer'] or ['supporter'] or ['sharer', 'supporter'])",
-      });
-    }
-
-    const ALLOWED_ROLES = ['sharer', 'supporter'];
-
-    const invalidRoles = roles.filter(role => !ALLOWED_ROLES.includes(role));
-    if (invalidRoles.length > 0) {
-      return res.status(400).json({
-        success: false,
-        message: "Invalid role(s) specified",
+        message: `Roles must be one of: : ${ALLOWED_ROLES.join(", ")}`,
       });
     }
 
@@ -52,7 +43,7 @@ async function register(req, res) {
       });
     }
 
-    const saltRounds = 10;
+    const saltRounds = 12;
     const hashedPassword = bcrypt.hashSync(password, saltRounds);
 
     const existingUser = await Users.findOne({ where: { email } });
@@ -68,7 +59,7 @@ async function register(req, res) {
       username,
       email,
       password: hashedPassword,
-      roles,
+      role,
     };
 
     await Users.create(newUser);
@@ -102,7 +93,7 @@ async function login(req, res) {
 
     const user = await Users.findOne({
       where: { email },
-      attributes: ["id", "username", "email", "password", "roles"],
+      attributes: ["id", "username", "email", "password", "role", "lastLogin"],
     });
     if (!user) {
       return res.status(401).json({
@@ -111,11 +102,22 @@ async function login(req, res) {
       });
     }
 
+    const isPasswordValid = await bcrypt.compare(password, user.password);
+
+    if (!isPasswordValid) {
+      return res.status(401).json({
+        success: false,
+        message: "Invalid password",
+      });
+    }
+
+    await Users.update({ lastLogin: new Date() }, { where: { id: user.id } });
+
     const payload = {
       id: user.id,
       username: user.username,
       email: user.email,
-      roles: user.roles,
+      roles: user.role,
       time: Date.now(),
     };
 
@@ -141,12 +143,10 @@ async function login(req, res) {
 async function getSupporters(req, res) {
   try {
     const supporters = await Users.findAll({
-      where: { 
-        roles: {
-          [Op.contains]: ['supporter'],
-        },
+      where: {
+        role: "supporter",
       },
-      attributes: ["id", "username", "email"]
+      attributes: ["id", "username", "email"],
     });
 
     return res.status(200).json({
@@ -164,4 +164,8 @@ async function getSupporters(req, res) {
   }
 }
 
-module.exports = { register, login, getSupporters };
+module.exports = {
+  register,
+  login,
+  getSupporters,
+};

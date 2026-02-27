@@ -1,21 +1,17 @@
-'use strict';
+"use strict";
 /** @type {import('sequelize-cli').Migration} */
 module.exports = {
   async up(queryInterface, Sequelize) {
-    await queryInterface.createTable('stories', {
+    await queryInterface.createTable("comments", {
       id: {
         allowNull: false,
         primaryKey: true,
         type: Sequelize.UUID,
         defaultValue: Sequelize.UUIDV4,
       },
-      title: {
-        type: Sequelize.STRING,
-        allowNull: false
-      },
-      description: {
+      content: {
         type: Sequelize.TEXT,
-        allowNull: false
+        allowNull: false,
       },
       UserId: {
         type: Sequelize.UUID,
@@ -27,27 +23,27 @@ module.exports = {
         onUpdate: "CASCADE",
         onDelete: "CASCADE",
       },
-      likesCount: {
-        type: Sequelize.INTEGER,
+      StoryId: {
+        type: Sequelize.UUID,
         allowNull: false,
-        defaultValue: 0
-      },
-      isAnonymous: {
-        type: Sequelize.BOOLEAN,
-        allowNull: false,
-        defaultValue: false
+        references: {
+          model: "stories",
+          key: "id",
+        },
+        onUpdate: "CASCADE",
+        onDelete: "CASCADE",
       },
       createdAt: {
         allowNull: false,
-        type: Sequelize.DATE
+        type: Sequelize.DATE,
       },
       updatedAt: {
         allowNull: false,
-        type: Sequelize.DATE
-      }
+        type: Sequelize.DATE,
+      },
     });
   },
   async down(queryInterface, Sequelize) {
-    await queryInterface.dropTable('stories');
-  }
+    await queryInterface.dropTable("comments");
+  },
 };

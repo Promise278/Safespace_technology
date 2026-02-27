@@ -2,34 +2,20 @@
 /** @type {import('sequelize-cli').Migration} */
 module.exports = {
   async up(queryInterface, Sequelize) {
-    await queryInterface.createTable('users', {
+    await queryInterface.createTable('Conversations', {
       id: {
         allowNull: false,
-        primaryKey: true,
         type: Sequelize.UUID,
         defaultValue: Sequelize.UUIDV4,
+        primaryKey: true,
       },
-      username: {
-        type: Sequelize.STRING,
+      senderId: {
+        type: Sequelize.UUID,
         allowNull: false,
       },
-      email: {
-        type: Sequelize.STRING,
-        unique: true,
+      receiverId: {
+        type: Sequelize.UUID,
         allowNull: false,
-      },
-      password: {
-        type: Sequelize.STRING,
-        allowNull: false,
-      },
-      role: {
-        type: Sequelize.STRING,
-        allowNull: false,
-        defaultValue: "sharer",
-      },
-      lastLogin: {
-        type: Sequelize.DATE,
-        allowNull: true
       },
       createdAt: {
         allowNull: false,
@@ -42,6 +28,6 @@ module.exports = {
     });
   },
   async down(queryInterface, Sequelize) {
-    await queryInterface.dropTable('users');
+    await queryInterface.dropTable('Conversations');
   }
 };
