@@ -87,19 +87,17 @@ export default function ChatScreen() {
         }
 
         if (data && data.success) {
-          // local computed other user id to use inside this init closure
-          let computedOtherId: string | null = null;
-          // Backend sometimes returns just an array of messages for GET /messages/:id
-          if (Array.isArray(data.data)) {
-            // We got messages array
+          try {
+            let computedOtherId: string | null = null;
+
+            if (Array.isArray(data.data)) {
             setMessages(data.data || []);
             setConversationId(currentConversationId || null);
             setConvStatus("accepted");
 
-            // Try to fetch conversation metadata from conversations list
             try {
               const convRes = await fetch(`${API_BASE}/messages/conversations`, {
-                headers: { Authorization: `Bearer ${token}` },
+                headers: { Authorization: `Bearer ${token}` }
               });
               const convData = await convRes.json();
               if (convRes.ok && convData.success && Array.isArray(convData.data)) {
@@ -115,7 +113,6 @@ export default function ChatScreen() {
               console.error("Failed to fetch conversations for metadata:", e);
             }
 
-            // If still don't have otherUserId, derive from messages
             if (!otherUserId && data.data && data.data.length > 0) {
               const msg = data.data.find((m: any) => m.senderId !== uid) || data.data[0];
               const derivedOther = msg.senderId === uid ? msg.receiverId : msg.senderId;
@@ -125,16 +122,13 @@ export default function ChatScreen() {
               computedOtherId = otherUserId;
             }
 
-            // Mark conversation as read if we have an id
             if (currentConversationId) {
               await fetch(`${API_BASE}/messages/read/${currentConversationId}`, {
                 method: "PUT",
-                headers: { Authorization: `Bearer ${token}` },
+                headers: { Authorization: `Bearer ${token}` }
               });
             }
-
           } else {
-            // data.data is expected to contain conversation and messages
             setMessages(data.data.messages || []);
             setConversationId(data.data.conversation?.id || null);
             setConvStatus(data.data.conversation?.status || "accepted");
@@ -146,52 +140,37 @@ export default function ChatScreen() {
             setOtherUserId(otherId || null);
             computedOtherId = otherId || null;
 
-            // Mark as read immediately when opened
             if (data.data.conversation?.id) {
               await fetch(`${API_BASE}/messages/read/${data.data.conversation.id}`, {
-                 method: "PUT",
-                 headers: { Authorization: `Bearer ${token}` }
+                method: "PUT",
+                headers: { Authorization: `Bearer ${token}` }
               });
             }
           }
 
-          // Keep a local contactId and convRoomId for socket handlers (so they're available in closures)
           const contactId: string | null = computedOtherId || null;
           const convRoomId: string | null = (data.data && data.data.conversation && data.data.conversation.id) || currentConversationId || null;
 
-          // 2. Initialize Socket Connection
-          const newSocket = io(API_BASE, {
-            auth: { token }
-          });
+          const newSocket = io(API_BASE, { auth: { token } });
 
           newSocket.on("connect", () => {
             newSocket.emit("join", uid);
-            // Request initial online status (only if we know the other user's id)
-            if (contactId) {
-              newSocket.emit("getOnlineUsers", [contactId]);
-            }
-
-            if (convRoomId) {
-              newSocket.emit("joinConversation", convRoomId);
-            }
+            if (contactId) newSocket.emit("getOnlineUsers", [contactId]);
+            if (convRoomId) newSocket.emit("joinConversation", convRoomId);
           });
 
-          // Listen for online status
           newSocket.on("onlineUsersList", (userIds: string[]) => {
-            if (contactId && userIds.includes(contactId)) {
-              setIsContactOnline(true);
-            }
+            if (contactId && userIds.includes(contactId)) setIsContactOnline(true);
           });
-          
+
           newSocket.on("userOnline", (userId: string) => {
             if (contactId && userId === contactId) setIsContactOnline(true);
           });
-          
+
           newSocket.on("userOffline", (userId: string) => {
             if (contactId && userId === contactId) setIsContactOnline(false);
           });
 
-          // Listen for typing events
           newSocket.on("userTyping", (data: { userId: string }) => {
             if (contactId && data.userId === contactId) {
               setIsTyping(true);
@@ -200,28 +179,25 @@ export default function ChatScreen() {
           });
 
           newSocket.on("userStopTyping", (data: { userId: string }) => {
-            if (contactId && data.userId === contactId) {
-              setIsTyping(false);
-            }
+            if (contactId && data.userId === contactId) setIsTyping(false);
           });
 
           newSocket.on("receiveMessage", (msg: Message) => {
-            // Only append if it belongs to this open chat window
             if (contactId && (msg.senderId === contactId || msg.receiverId === contactId)) {
-               setMessages(prev => [...prev, msg]);
-               setIsTyping(false); // Stop typing if they sent a message
-               setTimeout(() => scrollViewRef.current?.scrollToEnd({ animated: true }), 100);
+              setMessages(prev => [...prev, msg]);
+              setIsTyping(false);
+              setTimeout(() => scrollViewRef.current?.scrollToEnd({ animated: true }), 100);
             }
           });
 
-        newSocket.on("conversationUpdate", (data: { id: string, status: string }) => {
-          if (data.id === conversationId || data.id === data.id) {
-            setConvStatus(data.status);
-          }
-        });
+          newSocket.on("conversationUpdate", (data: { id: string; status: string }) => {
+            if (data.id === conversationId) setConvStatus(data.status);
+          });
 
-        socketRef.current = newSocket;
-
+          socketRef.current = newSocket;
+        } catch (e) {
+          console.error("Failed to setup socket:", e);
+        }
       } catch (err) {
         console.error(err);
       } finally {

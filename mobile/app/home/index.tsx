@@ -136,7 +136,7 @@ export default function HomeScreen() {
   return (
     <ScrollView className="flex-1 bg-[#f9f4f2] px-4 pt-16">
       {/* NAVBAR */}
-      <View className="flex-row items-center justify-between mb-6">
+      <View className="flex-row items-center justify-between">
         <View className="flex-row items-center">
           <View className="w-20 h-20 rounded-full flex items-center justify-center">
             <Image
