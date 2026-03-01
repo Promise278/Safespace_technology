@@ -64,79 +64,155 @@ export default function ChatScreen() {
           headers: { Authorization: `Bearer ${token}` }
         });
         const data = await res.json();
-        
-        if (res.ok && data.success) {
-          setMessages(data.data.messages || []);
-          setConversationId(data.data.conversation?.id || null);
-          setConvStatus(data.data.conversation?.status || "accepted");
-          setConvReceiverId(data.data.conversation?.receiverId || null);
-          
-          const otherId = data.data.conversation?.senderId === uid 
-            ? data.data.conversation?.receiverId 
-            : data.data.conversation?.senderId;
-          setOtherUserId(otherId);
 
-          // Mark as read immediately when opened
-          if (data.data.conversation?.id) {
-            await fetch(`${API_BASE}/messages/read/${data.data.conversation.id}`, {
-               method: "PUT",
-               headers: { Authorization: `Bearer ${token}` }
+        // If fetching by the provided id failed, try creating/fetching a conversation
+        // assuming the provided id was a user id (starter from home screen)
+        if (!(res.ok && data.success)) {
+          try {
+            const createRes = await fetch(`${API_BASE}/messages/conversations`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+              body: JSON.stringify({ receiverId: currentConversationId })
             });
+            const createData = await createRes.json();
+            if (createRes.ok && createData.success) {
+              // Use the returned conversation
+              data.data = createData.data;
+            } else {
+              // nothing we can do — leave data as-is (will be handled below)
+            }
+          } catch (e) {
+            console.error("Failed to create conversation:", e);
           }
         }
 
-        // 2. Initialize Socket Connection
-        const newSocket = io(API_BASE, {
-          auth: { token }
-        });
-        
-        newSocket.on("connect", () => {
-          newSocket.emit("join", uid);
-          // Request initial online status
-          newSocket.emit("getOnlineUsers", [contactId]);
+        if (data && data.success) {
+          // local computed other user id to use inside this init closure
+          let computedOtherId: string | null = null;
+          // Backend sometimes returns just an array of messages for GET /messages/:id
+          if (Array.isArray(data.data)) {
+            // We got messages array
+            setMessages(data.data || []);
+            setConversationId(currentConversationId || null);
+            setConvStatus("accepted");
+
+            // Try to fetch conversation metadata from conversations list
+            try {
+              const convRes = await fetch(`${API_BASE}/messages/conversations`, {
+                headers: { Authorization: `Bearer ${token}` },
+              });
+              const convData = await convRes.json();
+              if (convRes.ok && convData.success && Array.isArray(convData.data)) {
+                const found = convData.data.find((c: any) => String(c.id) === String(currentConversationId));
+                if (found) {
+                  setConvStatus(found.status || "accepted");
+                  setConvReceiverId(found.receiverId || null);
+                  const otherIdFromConv = found.senderId === uid ? found.receiverId : found.senderId;
+                  setOtherUserId(otherIdFromConv || null);
+                }
+              }
+            } catch (e) {
+              console.error("Failed to fetch conversations for metadata:", e);
+            }
+
+            // If still don't have otherUserId, derive from messages
+            if (!otherUserId && data.data && data.data.length > 0) {
+              const msg = data.data.find((m: any) => m.senderId !== uid) || data.data[0];
+              const derivedOther = msg.senderId === uid ? msg.receiverId : msg.senderId;
+              setOtherUserId(derivedOther || null);
+              computedOtherId = derivedOther || null;
+            } else if (otherUserId) {
+              computedOtherId = otherUserId;
+            }
+
+            // Mark conversation as read if we have an id
+            if (currentConversationId) {
+              await fetch(`${API_BASE}/messages/read/${currentConversationId}`, {
+                method: "PUT",
+                headers: { Authorization: `Bearer ${token}` },
+              });
+            }
+
+          } else {
+            // data.data is expected to contain conversation and messages
+            setMessages(data.data.messages || []);
+            setConversationId(data.data.conversation?.id || null);
+            setConvStatus(data.data.conversation?.status || "accepted");
+            setConvReceiverId(data.data.conversation?.receiverId || null);
+
+            const otherId = data.data.conversation?.senderId === uid
+              ? data.data.conversation?.receiverId
+              : data.data.conversation?.senderId;
+            setOtherUserId(otherId || null);
+            computedOtherId = otherId || null;
+
+            // Mark as read immediately when opened
+            if (data.data.conversation?.id) {
+              await fetch(`${API_BASE}/messages/read/${data.data.conversation.id}`, {
+                 method: "PUT",
+                 headers: { Authorization: `Bearer ${token}` }
+              });
+            }
+          }
+
+          // Keep a local contactId and convRoomId for socket handlers (so they're available in closures)
+          const contactId: string | null = computedOtherId || null;
+          const convRoomId: string | null = (data.data && data.data.conversation && data.data.conversation.id) || currentConversationId || null;
+
+          // 2. Initialize Socket Connection
+          const newSocket = io(API_BASE, {
+            auth: { token }
+          });
+
+          newSocket.on("connect", () => {
+            newSocket.emit("join", uid);
+            // Request initial online status (only if we know the other user's id)
+            if (contactId) {
+              newSocket.emit("getOnlineUsers", [contactId]);
+            }
+
+            if (convRoomId) {
+              newSocket.emit("joinConversation", convRoomId);
+            }
+          });
+
+          // Listen for online status
+          newSocket.on("onlineUsersList", (userIds: string[]) => {
+            if (contactId && userIds.includes(contactId)) {
+              setIsContactOnline(true);
+            }
+          });
           
-          if (data.data.conversation?.id) {
-            newSocket.emit("joinConversation", data.data.conversation.id);
-          }
-        });
+          newSocket.on("userOnline", (userId: string) => {
+            if (contactId && userId === contactId) setIsContactOnline(true);
+          });
+          
+          newSocket.on("userOffline", (userId: string) => {
+            if (contactId && userId === contactId) setIsContactOnline(false);
+          });
 
-        // Listen for online status
-        newSocket.on("onlineUsersList", (userIds: string[]) => {
-          if (userIds.includes(contactId)) {
-            setIsContactOnline(true);
-          }
-        });
-        
-        newSocket.on("userOnline", (userId: string) => {
-          if (userId === contactId) setIsContactOnline(true);
-        });
-        
-        newSocket.on("userOffline", (userId: string) => {
-          if (userId === contactId) setIsContactOnline(false);
-        });
+          // Listen for typing events
+          newSocket.on("userTyping", (data: { userId: string }) => {
+            if (contactId && data.userId === contactId) {
+              setIsTyping(true);
+              setTimeout(() => scrollViewRef.current?.scrollToEnd({ animated: true }), 100);
+            }
+          });
 
-        // Listen for typing events
-        newSocket.on("userTyping", (data: { userId: string }) => {
-          if (data.userId === contactId) {
-            setIsTyping(true);
-            setTimeout(() => scrollViewRef.current?.scrollToEnd({ animated: true }), 100);
-          }
-        });
+          newSocket.on("userStopTyping", (data: { userId: string }) => {
+            if (contactId && data.userId === contactId) {
+              setIsTyping(false);
+            }
+          });
 
-        newSocket.on("userStopTyping", (data: { userId: string }) => {
-          if (data.userId === contactId) {
-            setIsTyping(false);
-          }
-        });
-
-        newSocket.on("receiveMessage", (msg: Message) => {
-          // Only append if it belongs to this open chat window
-          if (msg.senderId === contactId || msg.receiverId === contactId) {
-             setMessages(prev => [...prev, msg]);
-             setIsTyping(false); // Stop typing if they sent a message
-             setTimeout(() => scrollViewRef.current?.scrollToEnd({ animated: true }), 100);
-          }
-        });
+          newSocket.on("receiveMessage", (msg: Message) => {
+            // Only append if it belongs to this open chat window
+            if (contactId && (msg.senderId === contactId || msg.receiverId === contactId)) {
+               setMessages(prev => [...prev, msg]);
+               setIsTyping(false); // Stop typing if they sent a message
+               setTimeout(() => scrollViewRef.current?.scrollToEnd({ animated: true }), 100);
+            }
+          });
 
         newSocket.on("conversationUpdate", (data: { id: string, status: string }) => {
           if (data.id === conversationId || data.id === data.id) {
@@ -205,7 +281,7 @@ export default function ChatScreen() {
     const optimisticMsg: Message = {
       id: Date.now().toString(),
       senderId: currentUserId,
-      receiverId: contactId,
+      receiverId: otherUserId,
       content: newMessage.trim(),
       createdAt: new Date().toISOString()
     };
