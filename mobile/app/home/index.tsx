@@ -104,12 +104,14 @@ export default function HomeScreen() {
         body: JSON.stringify({ receiverId: sharerId }),
       });
       const data = await res.json();
-      if (res.ok) {
+      if (res.ok && data.success) {
+        // conversation is returned in data.data
+        const convId = data.data?.id || sharerId;
         // Find if we have the username of the sharer
         const sharer = stories.find((s) => s.userId === sharerId);
         router.push({
           pathname: `/messages/[id]`,
-          params: { id: sharerId, username: sharer?.username || "Sharer" },
+          params: { id: convId, username: sharer?.username || "Sharer" },
         } as any);
       }
     } catch (err) {
