@@ -105,17 +105,17 @@ export default function HomeScreen() {
       });
       const data = await res.json();
       if (res.ok && data.success) {
-        // conversation is returned in data.data
         const convId = data.data?.id || sharerId;
-        // Find if we have the username of the sharer
         const sharer = stories.find((s) => s.userId === sharerId);
-        router.push({
-          pathname: `/messages/[id]`,
-          params: { id: convId, username: sharer?.username || "Sharer" },
-        } as any);
+        
+        // Use direct navigation path for better reliability in Expo Router
+        router.push(`/messages/${convId}?username=${encodeURIComponent(sharer?.username || "Sharer")}` as any);
+      } else {
+        alert("Failed to start conversation: " + (data.message || "Unknown error"));
       }
     } catch (err) {
-      console.error(err);
+      console.error("Message initiation failed:", err);
+      alert("An error occurred while trying to message.");
     }
   };
 
@@ -136,7 +136,7 @@ export default function HomeScreen() {
   };
 
   return (
-    <ScrollView className="flex-1 bg-[#f9f4f2] px-4 pt-16">
+    <ScrollView className="flex-1 bg-[#f9f4f2] px-4 pt-4">
       {/* NAVBAR */}
       <View className="flex-row items-center justify-between">
         <View className="flex-row items-center">
@@ -255,8 +255,7 @@ export default function HomeScreen() {
                 </TouchableOpacity>
 
                 {role === "supporter" &&
-                  story.userId !==
-                    (AsyncStorage.getItem("safespace_user") as any)?.id && (
+                  story.userId !== currentUserId && (
                     <TouchableOpacity
                       className="flex-row items-center gap-2"
                       onPress={() => handleMessageSharer(story.userId)}

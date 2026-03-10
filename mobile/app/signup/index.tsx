@@ -117,7 +117,7 @@ export default function Signup() {
   };
 
   return (
-    <SafeAreaView className="flex-1 bg-gradient-to-b from-gray-50 to-white mt-8">
+    <SafeAreaView className="flex-1 bg-white mt-8">
       <StatusBar barStyle="dark-content" />
 
       <View className="flex-1 px-4 py-2">

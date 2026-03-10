@@ -26,7 +26,7 @@ const HomeNavbar = () => {
 
   return (
     <div className="flex justify-between items-center fixed top-0 left-0 right-0 h-20 bg-white border-b border-gray-100 md:px-72 px-4 z-10">
-      <Link href="./HomeNav">
+      <Link href="/pages/homepage">
         <div className="flex items-center">
           <div className="md:w-10 w-8 md:h-10 h-8 rounded-full bg-[#f19469] flex items-center justify-center">
             <Shield size={22} color="white" />

@@ -59,7 +59,7 @@ export default function Signup() {
     <SafeAreaView className="flex-1 bg-gray-100">
       <StatusBar barStyle="dark-content" />
 
-      <View className="flex-1 items-center px-5 mt-12">
+      <View className="flex-1 items-center px-5">
         {/* Header */}
         <View className="items-center py-8">
           <View className="w-20 h-20 rounded-full flex items-center justify-center">

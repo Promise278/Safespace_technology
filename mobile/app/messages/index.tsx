@@ -153,10 +153,7 @@ export default function MessagesScreen() {
             <TouchableOpacity 
               key={contact.user.id} 
               className="flex-row items-center px-4 py-4 border-b border-gray-50"
-              onPress={() => router.push({
-                pathname: "/messages/[id]",
-                params: { id: contact.conversationId, username: contact.user.username }
-              } as any)}
+              onPress={() => router.push(`/messages/${contact.conversationId}?username=${encodeURIComponent(contact.user.username)}` as any)}
             >
               <View className="w-12 h-12 rounded-full bg-[#f19469] items-center justify-center mr-3 relative">
                 <Text className="text-white font-bold text-lg">

@@ -135,17 +135,13 @@ async function getConversationMessages(req, res) {
       order: [["createdAt", "ASC"]],
     });
 
-    if (messages.length === 0) {
-      return res.status(404).json({
-        success: false,
-        message: "No messages found",
-      });
-    }
-
     return res.status(200).json({
       success: true,
       data: messages,
-      message: "Messages retrieved successfully",
+      message:
+        messages.length === 0
+          ? "No messages yet"
+          : "Messages retrieved successfully",
     });
   } catch (error) {
     console.error(error);

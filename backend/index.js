@@ -1,29 +1,3 @@
-// const express = require('express')
-// const app = express();
-// const cors = require('cors')
-// const authRoutes = require("./routes/auth.routes")
-// const storyRoutes =require("./routes/story.routes");
-// const connection = require('./config/connection');
-
-// app.use(express.json())
-// app.use(cors());
-// const PORT = process.env.PORT;
-
-// app.get('/',(req, res) => {
-//     console.log("Welcome to the page")
-//     res.send("Welcome to our homepage")
-// })
-
-// app.use('/auth', authRoutes)
-// app.use('/stories', storyRoutes)
-
-// connection.sync({ alter: true }).then(async() => {
-//     app.listen(PORT, () => {
-//         console.log(`Database Connected Successfully and Server running on port ${PORT}`)
-//     })
-// }).catch((e) => {
-//     console.log(`Database connection failed ${e}`)
-// });
 const express = require("express");
 const http = require("http");
 const { Server } = require("socket.io");
@@ -45,9 +19,22 @@ const db = require("./models");
 // Setup Socket.IO
 const io = new Server(server, {
   cors: {
-    origin: "*", // Change this to your frontend domain in production
+    origin: "*",
     methods: ["GET", "POST"],
   },
+});
+
+// Socket Auth Middleware
+const jwt = require("jsonwebtoken");
+io.use((socket, next) => {
+  const token = socket.handshake.auth?.token;
+  if (!token) return next(new Error("Authentication error: No token provided"));
+
+  jwt.verify(token, process.env.JWT_SECRET, (err, decoded) => {
+    if (err) return next(new Error("Authentication error: Invalid token"));
+    socket.user = decoded; // { id, username, roles, ... }
+    next();
+  });
 });
 
 // Make io available globally in controllers
@@ -108,28 +95,103 @@ io.on("connection", (socket) => {
   // Send message in real-time (persist to DB + broadcast)
   socket.on("sendMessage", async (data) => {
     try {
-      const { conversationId, senderId, content, senderUsername } = data;
+      const { content, senderUsername } = data;
+      // Ensure IDs are strings and not objects
+      const conversationId = String(data.conversationId || "");
+      const senderId = socket.user?.id ? String(socket.user.id) : null;
 
-      // Persist to database
+      console.log("Socket sendMessage attempt:", {
+        conversationId,
+        senderId,
+        hasContent: !!content,
+      });
+
+      if (!conversationId || !senderId || !content) {
+        return socket.emit("messageError", {
+          error: "Missing required fields",
+          details: `Conv: ${!!conversationId}, Sender: ${!!senderId}, Content: ${!!content}`,
+        });
+      }
+
+      // Check for valid UUID format to prevent Postgres crash
+      const uuidRegex =
+        /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+      if (!uuidRegex.test(conversationId)) {
+        return socket.emit("messageError", {
+          error: "Invalid ID format",
+          details: "The conversation ID is not a valid UUID.",
+        });
+      }
+
+      // 1. Fetch conversation to verify participants and status
+      const conversation = await db.Conversation.findByPk(conversationId);
+      if (!conversation) {
+        console.error(`Socket: Conversation ${conversationId} not found`);
+        return socket.emit("messageError", {
+          error: "Conversation not found on server",
+        });
+      }
+
+      // 2. Authorization Check (Sender must be part of the conversation)
+      if (
+        String(conversation.senderId) !== String(senderId) &&
+        String(conversation.receiverId) !== String(senderId)
+      ) {
+        return socket.emit("messageError", {
+          error: "Unauthorized",
+          details: "You are not a participant in this conversation",
+        });
+      }
+
+      // 3. Status Check (Locked/Rejected conversations)
+      if (conversation.status === "rejected") {
+        return socket.emit("messageError", {
+          error: "Conversation closed",
+        });
+      }
+
+      // 4. Pending Check (Receiver must accept before replying)
+      if (
+        conversation.status === "pending" &&
+        String(senderId) === String(conversation.receiverId)
+      ) {
+        return socket.emit("messageError", {
+          error: "Accept request",
+          details: "You must accept the request before replying",
+        });
+      }
+
+      // 5. Determine ReceiverId
+      const receiverId =
+        String(conversation.senderId) === String(senderId)
+          ? conversation.receiverId
+          : conversation.senderId;
+
+      // 6. DB Persistence
       const message = await db.Message.create({
         conversationId,
         senderId,
-        content,
+        receiverId,
+        content: content.trim(),
       });
 
-      // Broadcast to the conversation room
+      // 7. Broadcast to everyone in the room (including sender)
       io.to(conversationId).emit("receiveMessage", {
         id: message.id,
         conversationId: message.conversationId,
         senderId: message.senderId,
+        receiverId: message.receiverId,
         content: message.content,
         isRead: message.isRead,
         createdAt: message.createdAt,
-        senderUsername: senderUsername || "Unknown",
+        senderUsername: senderUsername || "User",
       });
     } catch (error) {
-      console.error("Socket sendMessage error:", error);
-      socket.emit("messageError", { error: "Failed to send message" });
+      console.error("Socket sendMessage CRITICAL error:", error);
+      socket.emit("messageError", {
+        error: "Failed to send message",
+        details: error.message || "Database or connection error",
+      });
     }
   });
 
